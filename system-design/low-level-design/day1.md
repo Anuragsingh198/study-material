@@ -1,543 +1,942 @@
-# Day 01 — Single Responsibility Principle (SRP)
+# Day 01 — All 5 SOLID Principles
 ## 30-Day LLD Twitter Series | @startfin
 
 ---
 
-## What is SRP?
+## What is SOLID?
 
-**Single Responsibility Principle** is the **S** in SOLID.
+SOLID is a set of **5 design principles** that make your code:
+- Easier to understand
+- Easier to change
+- Easier to test
+- Easier to extend without breaking things
+
+Every senior developer knows SOLID.
+Every good codebase follows SOLID.
+This is where clean code begins.
+
+```
+S — Single Responsibility Principle  (SRP)
+O — Open / Closed Principle          (OCP)
+L — Liskov Substitution Principle    (LSP)
+I — Interface Segregation Principle  (ISP)
+D — Dependency Inversion Principle   (DIP)
+```
+
+Learn all 5 today. One by one. With full code.
+
+---
+---
+
+# S — Single Responsibility Principle (SRP)
+
+## What is it?
 
 > A class should have **one, and only one, reason to change.**
 
-This means every class you write should do **exactly one job**.
+Every class must do exactly **one job**.
 Not two. Not five. One.
 
-If your class handles multiple things — calculating, formatting, saving, emailing —
-then every time any one of those things changes, you are forced to open and edit that same class.
-That is risky. That causes bugs. That breaks things that were working fine.
+If your class calculates, formats, saves, AND emails —
+that is 4 reasons to change. That is 4 ways to break.
 
-SRP says: split the jobs. One class, one responsibility.
-
----
-
-## Why Does This Matter?
-
-Imagine you have a class called `Invoice`.
-It calculates the total. It formats the output. It saves to a file. It sends an email.
-
-Now your manager says:
-- "Change the email format."
-- "Switch from file storage to a database."
-- "Add GST to the calculation."
-- "Format the output as JSON instead of plain text."
-
-Every single one of these changes forces you to open the SAME class.
-Every change risks breaking the OTHER parts of that class.
-You touched the email logic — now the calculation is broken.
-You touched the formatter — now saving to file fails.
-
-This is the problem SRP solves.
-
----
-
-## The Bad Code — God Class
+## Bad Code
 
 ```python
-# BAD EXAMPLE — Do NOT do this
-# This class has 4 responsibilities crammed into one
-
+# BAD — God class doing everything
 class Invoice:
     def __init__(self, invoice_id, items):
         self.invoice_id = invoice_id
-        self.items = items  # list of dicts: [{"name": "Book", "price": 199}, ...]
+        self.items = items
 
-    # Responsibility 1: Calculation
+    # job 1: calculate
     def calculate_total(self):
-        total = 0
-        for item in self.items:
-            total += item["price"]
-        return total
+        return sum(item["price"] for item in self.items)
 
-    # Responsibility 2: Formatting
+    # job 2: format
     def format_invoice(self):
-        lines = [f"Invoice ID: {self.invoice_id}"]
+        lines = [f"Invoice #{self.invoice_id}"]
         for item in self.items:
-            lines.append(f"  - {item['name']}: ${item['price']}")
+            lines.append(f"  {item['name']}: ${item['price']}")
         lines.append(f"Total: ${self.calculate_total()}")
         return "\n".join(lines)
 
-    # Responsibility 3: Saving to file
-    def save_to_file(self, filepath):
-        content = self.format_invoice()
-        with open(filepath, "w") as f:
-            f.write(content)
-        print(f"Invoice saved to {filepath}")
+    # job 3: save
+    def save_to_file(self, path):
+        with open(path, "w") as f:
+            f.write(self.format_invoice())
 
-    # Responsibility 4: Sending email
-    def send_email(self, recipient_email):
-        content = self.format_invoice()
-        print(f"Sending email to {recipient_email}...")
-        print(f"Content:\n{content}")
-        # imagine actual email logic here
+    # job 4: email
+    def send_email(self, recipient):
+        print(f"Sending to {recipient}:\n{self.format_invoice()}")
+
+# Problems:
+# Change email logic  → edit Invoice → risk breaking calculate
+# Change format       → edit Invoice → risk breaking save
+# Want to test only calculate? You still need format + save + email to exist
+```
+
+## Good Code
+
+```python
+# GOOD — One class, one job
+
+class InvoiceCalculator:
+    """Only job: calculate money."""
+
+    def calculate_total(self, items):
+        return sum(item["price"] for item in items)
+
+    def calculate_tax(self, items, rate=0.18):
+        return round(self.calculate_total(items) * rate, 2)
+
+    def calculate_grand_total(self, items, rate=0.18):
+        return self.calculate_total(items) + self.calculate_tax(items, rate)
+
+
+class InvoiceFormatter:
+    """Only job: format the invoice into text."""
+
+    def __init__(self):
+        self.calc = InvoiceCalculator()
+
+    def format_as_text(self, invoice_id, items):
+        lines = [f"Invoice #{invoice_id}"]
+        for item in items:
+            lines.append(f"  {item['name']}: ${item['price']}")
+        lines.append(f"Total: ${self.calc.calculate_grand_total(items)}")
+        return "\n".join(lines)
+
+
+class InvoiceSaver:
+    """Only job: save the invoice to disk."""
+
+    def __init__(self):
+        self.formatter = InvoiceFormatter()
+
+    def save(self, invoice_id, items, path):
+        content = self.formatter.format_as_text(invoice_id, items)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"Saved to {path}")
+
+
+class InvoiceEmailer:
+    """Only job: send the invoice by email."""
+
+    def __init__(self):
+        self.formatter = InvoiceFormatter()
+
+    def send(self, invoice_id, items, recipient):
+        content = self.formatter.format_as_text(invoice_id, items)
+        print(f"Emailing {recipient}:\n{content}")
 
 
 # Usage
 items = [
     {"name": "Python Book", "price": 299},
     {"name": "Keyboard",    "price": 999},
-    {"name": "Mouse",       "price": 499},
 ]
-invoice = Invoice(101, items)
-invoice.save_to_file("invoice_101.txt")
-invoice.send_email("customer@example.com")
+
+calc    = InvoiceCalculator()
+saver   = InvoiceSaver()
+emailer = InvoiceEmailer()
+
+print("Total:", calc.calculate_grand_total(items))
+saver.save(101, items, "invoice.txt")
+emailer.send(101, items, "user@example.com")
 ```
 
-### Why is this bad?
+## Output
 
 ```
-How many reasons does this class have to change?
-
-1. Calculation logic changes     →  edit Invoice
-2. Output format changes         →  edit Invoice
-3. Storage changes (file → DB)   →  edit Invoice
-4. Email logic changes           →  edit Invoice
-
-Answer: 4 reasons.
-SRP rule: maximum 1.
-
-This class is VIOLATING SRP.
+Total: 1535.64
+Saved to invoice.txt
+Emailing user@example.com:
+Invoice #101
+  Python Book: $299
+  Keyboard: $999
+Total: $1535.64
 ```
 
----
-
-## The Good Code — SRP Applied
-
-We split the God class into **4 focused classes**.
-Each one does exactly one thing.
-
-```python
-# GOOD EXAMPLE — SRP Applied correctly
-# Each class has ONE job and ONE reason to change
-
-
-# ─────────────────────────────────────────────
-# Class 1: Only knows how to CALCULATE
-# ─────────────────────────────────────────────
-class InvoiceCalculator:
-    """
-    Responsibility: Calculate the total price of an invoice.
-    Reason to change: Only if calculation rules change (e.g., add tax, discount).
-    """
-
-    def calculate_total(self, items):
-        total = 0
-        for item in items:
-            total += item["price"]
-        return total
-
-    def calculate_tax(self, items, tax_rate=0.18):
-        total = self.calculate_total(items)
-        return round(total * tax_rate, 2)
-
-    def calculate_grand_total(self, items, tax_rate=0.18):
-        total = self.calculate_total(items)
-        tax   = self.calculate_tax(items, tax_rate)
-        return total + tax
-
-
-# ─────────────────────────────────────────────
-# Class 2: Only knows how to FORMAT
-# ─────────────────────────────────────────────
-class InvoiceFormatter:
-    """
-    Responsibility: Format invoice data into a readable string.
-    Reason to change: Only if output format changes (e.g., plain text → JSON → HTML).
-    """
-
-    def __init__(self):
-        self.calculator = InvoiceCalculator()
-
-    def format_as_text(self, invoice_id, items):
-        lines = []
-        lines.append(f"{'='*40}")
-        lines.append(f"  INVOICE #{invoice_id}")
-        lines.append(f"{'='*40}")
-        for item in items:
-            lines.append(f"  {item['name']:<20} ${item['price']:>6}")
-        lines.append(f"{'─'*40}")
-        total = self.calculator.calculate_total(items)
-        tax   = self.calculator.calculate_tax(items)
-        grand = self.calculator.calculate_grand_total(items)
-        lines.append(f"  {'Subtotal':<20} ${total:>6}")
-        lines.append(f"  {'Tax (18%)':<20} ${tax:>6}")
-        lines.append(f"  {'Grand Total':<20} ${grand:>6}")
-        lines.append(f"{'='*40}")
-        return "\n".join(lines)
-
-    def format_as_json(self, invoice_id, items):
-        import json
-        return json.dumps({
-            "invoice_id": invoice_id,
-            "items":      items,
-            "subtotal":   self.calculator.calculate_total(items),
-            "tax":        self.calculator.calculate_tax(items),
-            "grand_total":self.calculator.calculate_grand_total(items),
-        }, indent=2)
-
-
-# ─────────────────────────────────────────────
-# Class 3: Only knows how to SAVE
-# ─────────────────────────────────────────────
-class InvoiceSaver:
-    """
-    Responsibility: Persist the invoice to storage.
-    Reason to change: Only if storage mechanism changes (file → database → cloud).
-    """
-
-    def __init__(self):
-        self.formatter = InvoiceFormatter()
-
-    def save_to_file(self, invoice_id, items, filepath):
-        content = self.formatter.format_as_text(invoice_id, items)
-        with open(filepath, "w") as f:
-            f.write(content)
-        print(f"[SAVED] Invoice #{invoice_id} → {filepath}")
-
-    def save_to_json(self, invoice_id, items, filepath):
-        content = self.formatter.format_as_json(invoice_id, items)
-        with open(filepath, "w") as f:
-            f.write(content)
-        print(f"[SAVED] Invoice #{invoice_id} as JSON → {filepath}")
-
-
-# ─────────────────────────────────────────────
-# Class 4: Only knows how to NOTIFY
-# ─────────────────────────────────────────────
-class InvoiceEmailer:
-    """
-    Responsibility: Send the invoice to the customer.
-    Reason to change: Only if notification channel changes (email → SMS → WhatsApp).
-    """
-
-    def __init__(self):
-        self.formatter = InvoiceFormatter()
-
-    def send_email(self, invoice_id, items, recipient):
-        content = self.formatter.format_as_text(invoice_id, items)
-        print(f"[EMAIL] Sending to {recipient}...")
-        print(content)
-        print(f"[EMAIL] Sent successfully.")
-
-    def send_sms(self, invoice_id, items, phone):
-        total = InvoiceCalculator().calculate_grand_total(items)
-        print(f"[SMS] To {phone}: Invoice #{invoice_id} total is ${total}. Thank you!")
-
-
-# ─────────────────────────────────────────────
-# Usage — clean, clear, separated
-# ─────────────────────────────────────────────
-if __name__ == "__main__":
-    invoice_id = 101
-    items = [
-        {"name": "Python Book", "price": 299},
-        {"name": "Mechanical Keyboard", "price": 999},
-        {"name": "Wireless Mouse",      "price": 499},
-    ]
-
-    # Calculate
-    calc  = InvoiceCalculator()
-    print("Subtotal :", calc.calculate_total(items))
-    print("Tax      :", calc.calculate_tax(items))
-    print("Grand    :", calc.calculate_grand_total(items))
-
-    # Format
-    fmt = InvoiceFormatter()
-    print(fmt.format_as_text(invoice_id, items))
-
-    # Save
-    saver = InvoiceSaver()
-    saver.save_to_file(invoice_id, items, "invoice_101.txt")
-    saver.save_to_json(invoice_id, items, "invoice_101.json")
-
-    # Notify
-    emailer = InvoiceEmailer()
-    emailer.send_email(invoice_id, items, "customer@example.com")
-    emailer.send_sms(invoice_id, items, "+91-9999999999")
-```
-
----
-
-## Output When You Run This
+## Key Rule
 
 ```
-Subtotal : 1797
-Tax      : 323.46
-Grand    : 2120.46
-
-========================================
-  INVOICE #101
-========================================
-  Python Book          $   299
-  Mechanical Keyboard  $   999
-  Wireless Mouse       $   499
-────────────────────────────────────────
-  Subtotal             $  1797
-  Tax (18%)            $323.46
-  Grand Total          $2120.46
-========================================
-
-[SAVED] Invoice #101 → invoice_101.txt
-[SAVED] Invoice #101 as JSON → invoice_101.json
-
-[EMAIL] Sending to customer@example.com...
-... (full invoice printed)
-[EMAIL] Sent successfully.
-
-[SMS] To +91-9999999999: Invoice #101 total is $2120.46. Thank you!
-```
-
----
-
-## Side-by-Side Comparison
-
-```
-BEFORE SRP (God Class)               AFTER SRP (4 Classes)
-─────────────────────────────────    ─────────────────────────────────
-class Invoice:                       class InvoiceCalculator:
-    def calculate_total()                def calculate_total()
-    def format_invoice()                 def calculate_tax()
-    def save_to_file()                   def calculate_grand_total()
-    def send_email()
-                                     class InvoiceFormatter:
-1 class                                  def format_as_text()
-4 responsibilities                       def format_as_json()
-4 reasons to change
-All code in one place            →   class InvoiceSaver:
-Changing email breaks saving         def save_to_file()
-Changing format breaks tests         def save_to_json()
-Hard to test in isolation
-Hard to reuse                        class InvoiceEmailer:
-                                         def send_email()
-                                         def send_sms()
-
-                                     4 classes
-                                     1 responsibility each
-                                     1 reason to change each
-                                     Easy to test in isolation
-                                     Easy to reuse independently
-```
-
----
-
-## Unit Tests — How SRP Makes Testing Easy
-
-```python
-import unittest
-
-# ── Test InvoiceCalculator in complete isolation ──────────────────────────────
-class TestInvoiceCalculator(unittest.TestCase):
-
-    def setUp(self):
-        self.calc  = InvoiceCalculator()
-        self.items = [
-            {"name": "Book",     "price": 200},
-            {"name": "Pen",      "price": 50},
-            {"name": "Notebook", "price": 100},
-        ]
-
-    def test_calculate_total(self):
-        self.assertEqual(self.calc.calculate_total(self.items), 350)
-
-    def test_calculate_tax(self):
-        self.assertAlmostEqual(self.calc.calculate_tax(self.items, 0.18), 63.0)
-
-    def test_calculate_grand_total(self):
-        self.assertAlmostEqual(self.calc.calculate_grand_total(self.items, 0.18), 413.0)
-
-    def test_empty_items(self):
-        self.assertEqual(self.calc.calculate_total([]), 0)
-
-
-# ── Test InvoiceFormatter in complete isolation ───────────────────────────────
-class TestInvoiceFormatter(unittest.TestCase):
-
-    def setUp(self):
-        self.fmt   = InvoiceFormatter()
-        self.items = [{"name": "Book", "price": 200}]
-
-    def test_text_contains_invoice_id(self):
-        result = self.fmt.format_as_text(42, self.items)
-        self.assertIn("42", result)
-
-    def test_text_contains_item_name(self):
-        result = self.fmt.format_as_text(42, self.items)
-        self.assertIn("Book", result)
-
-    def test_json_is_valid(self):
-        import json
-        result = self.fmt.format_as_json(42, self.items)
-        parsed = json.loads(result)           # should not raise
-        self.assertEqual(parsed["invoice_id"], 42)
-        self.assertEqual(parsed["subtotal"], 200)
-
-
-# ── Run all tests ─────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-# OUTPUT:
-# test_calculate_grand_total ... ok
-# test_calculate_tax         ... ok
-# test_calculate_total       ... ok
-# test_empty_items           ... ok
-# test_json_is_valid         ... ok
-# test_text_contains_invoice_id ... ok
-# test_text_contains_item_name  ... ok
-#
-# Ran 7 tests in 0.002s
-# OK
-```
-
-Notice how you can test `InvoiceCalculator` without touching `InvoiceFormatter`.
-You can test `InvoiceFormatter` without a real file or email server.
-That is only possible because of SRP.
-
----
-
-## Real-World Analogy
-
-```
-Think of a restaurant kitchen.
-
-CHEF         → cooks the food.         One job.
-WAITER       → serves the food.        One job.
-CASHIER      → handles the billing.    One job.
-MANAGER      → coordinates everyone.   One job.
-
-Nobody asks the Chef to also:
-  - deliver the food to the table
-  - handle the payment
-  - clean the dishes
-
-Why? Because if the Chef is doing all of that,
-and you hire a new waiter, you still need to
-retrain the Chef. Change one thing, everything
-is affected.
-
-Same rule in your code.
-One class = one chef = one job.
-```
-
----
-
-## Key Takeaways
-
-```
-1. SRP = one class, one job, one reason to change.
-
-2. Ask yourself before writing any class:
-   "What is the SINGLE thing this class is responsible for?"
-
-3. If you cannot answer that in one sentence without using
-   the word "and", your class is doing too much.
-
-4. Signs you are violating SRP:
-   - Class has 10+ methods
-   - Class name ends in "Manager", "Handler", "Helper", "Utils"
-   - You cannot test one feature without setting up five others
-   - Changing one feature breaks a completely different feature
-
-5. How to fix SRP violations:
-   - Find the different "themes" of methods in your class
-   - Each theme = one new class
-   - Name each class after what it does, not what it is
-```
-
----
-
-## Twitter Thread — Copy Paste Ready
-
-**Tweet 1:**
-```
-How many reasons does YOUR class have to change?
-
-If the answer is more than 1 — it is violating SRP.
-
-Here is how to fix it 🧵
-
-Day 1/30 — LLD Series #SRP #SOLID
-```
-
-**Tweet 2:**
-```
-The God Class problem.
-
-One class. 4 jobs.
-Calculate → Format → Save → Email
-
-Change the email? Risk breaking the calculator.
-Change the format? Risk breaking the saver.
-
-[POST CODE IMAGE — the BAD example above]
-```
-
-**Tweet 3:**
-```
-The SRP fix.
-
-Split into 4 focused classes:
-
-InvoiceCalculator → only math
-InvoiceFormatter  → only output
-InvoiceSaver      → only storage
-InvoiceEmailer    → only delivery
-
-[POST CODE IMAGE — the GOOD example above]
-```
-
-**Tweet 4:**
-```
-Why does this matter?
-
-✅ Each class is testable in isolation
-✅ Change email logic → zero risk to calculator
-✅ Switch from file to DB → only touch InvoiceSaver
-✅ Add JSON output → only touch InvoiceFormatter
-
-One change. One class. Zero surprises.
-```
-
-**Tweet 5:**
-```
-Quick test to check SRP:
-
-"What does this class do?"
+Ask yourself: "What does this class do?"
 
 If your answer has the word AND in it —
-your class is doing too much.
+your class is doing too much. Split it.
 
-Split it.
+Bad:  "Invoice calculates AND formats AND saves AND emails."
+Good: "InvoiceCalculator calculates the total."
+```
 
-Day 1/30 ✅
-Tomorrow: Open/Closed Principle (OCP)
-Follow for all 30 days 👇
+---
+---
 
-#LLD #SOLID #SRP #CleanCode #SystemDesign
-#Python #SoftwareEngineering #100DaysOfCode
+# O — Open / Closed Principle (OCP)
+
+## What is it?
+
+> A class should be **open for extension** but **closed for modification.**
+
+You should be able to **add new behavior** without editing existing, working code.
+
+When you add a new feature, you write a new class.
+You do NOT go back and change old classes.
+
+## Bad Code
+
+```python
+# BAD — every new discount type requires editing this function
+
+class DiscountService:
+    def apply_discount(self, price, discount_type):
+        if discount_type == "seasonal":
+            return price * 0.90          # 10% off
+        elif discount_type == "loyalty":
+            return price * 0.85          # 15% off
+        elif discount_type == "student":
+            return price * 0.80          # 20% off
+        # Problem: adding "new_user" discount means
+        # opening this file and editing working code.
+        # Every edit risks breaking existing discounts.
+        else:
+            return price
+
+# To add a new discount:
+# 1. Open this file
+# 2. Add a new elif
+# 3. Hope you don't break the others
+# This violates OCP.
+```
+
+## Good Code
+
+```python
+# GOOD — add new discounts without touching old code
+
+from abc import ABC, abstractmethod
+
+class Discount(ABC):
+    """Base interface. Every discount must implement apply()."""
+
+    @abstractmethod
+    def apply(self, price: float) -> float:
+        ...
+
+    def describe(self) -> str:
+        return f"{self.__class__.__name__}"
+
+
+class SeasonalDiscount(Discount):
+    """10% off during seasonal sale."""
+    def apply(self, price):
+        return price * 0.90
+
+
+class LoyaltyDiscount(Discount):
+    """15% off for loyal customers."""
+    def apply(self, price):
+        return price * 0.85
+
+
+class StudentDiscount(Discount):
+    """20% off for students."""
+    def apply(self, price):
+        return price * 0.80
+
+
+class NewUserDiscount(Discount):
+    """25% off for first-time users."""
+    def apply(self, price):
+        return price * 0.75
+
+
+class NoDiscount(Discount):
+    """No discount applied."""
+    def apply(self, price):
+        return price
+
+
+# The checkout function never changes.
+# It works with ANY discount past, present, or future.
+def checkout(price: float, discount: Discount) -> float:
+    final = discount.apply(price)
+    print(f"{discount.describe()}: ${price} → ${final:.2f}")
+    return final
+
+
+# Usage
+base_price = 1000.0
+
+checkout(base_price, SeasonalDiscount())    # existing
+checkout(base_price, LoyaltyDiscount())     # existing
+checkout(base_price, StudentDiscount())     # existing
+checkout(base_price, NewUserDiscount())     # NEW — zero old code changed
+checkout(base_price, NoDiscount())          # default
+```
+
+## Output
+
+```
+SeasonalDiscount: $1000.0 → $900.00
+LoyaltyDiscount:  $1000.0 → $850.00
+StudentDiscount:  $1000.0 → $800.00
+NewUserDiscount:  $1000.0 → $750.00
+NoDiscount:       $1000.0 → $1000.00
+```
+
+## Key Rule
+
+```
+Every time you write a new elif to handle a new case —
+ask yourself: "Can I make this a new class instead?"
+
+If yes → make a new class. That is OCP.
+
+Old code stays closed.   (no edits, no risk)
+New code stays open.     (add freely, safely)
+```
+
+---
+---
+
+# L — Liskov Substitution Principle (LSP)
+
+## What is it?
+
+> If S is a subtype of T, then objects of type T may be **replaced with objects of type S** without breaking the program.
+
+In plain English:
+**A child class must be usable anywhere the parent class is used, with no surprises.**
+
+If you swap a subclass in and something breaks —
+you are violating LSP.
+
+## Bad Code
+
+```python
+# BAD — Penguin breaks the Bird contract
+
+class Bird:
+    def fly(self):
+        return "I am flying!"
+
+    def describe(self):
+        return f"I am a {self.__class__.__name__} and I {self.fly()}"
+
+
+class Eagle(Bird):
+    def fly(self):
+        return "soaring at 3000 feet"      # fine, Eagle can fly
+
+
+class Penguin(Bird):
+    def fly(self):
+        # PROBLEM: Penguin cannot fly.
+        # But it is forced to implement fly() because it inherits from Bird.
+        raise NotImplementedError("Penguins cannot fly!")
+
+
+def make_bird_fly(bird: Bird):
+    print(bird.describe())      # works for Eagle
+                                # CRASHES for Penguin
+
+
+make_bird_fly(Eagle())          # OK
+make_bird_fly(Penguin())        # RuntimeError — LSP violated
+```
+
+## Good Code
+
+```python
+# GOOD — separate capabilities, no broken substitution
+
+from abc import ABC, abstractmethod
+
+
+class Bird(ABC):
+    """Base class — only what ALL birds share."""
+
+    @abstractmethod
+    def eat(self):
+        ...
+
+    @abstractmethod
+    def breathe(self):
+        ...
+
+    def describe(self):
+        return f"I am a {self.__class__.__name__}"
+
+
+class FlyingBird(Bird):
+    """Mixin for birds that can fly."""
+
+    @abstractmethod
+    def fly(self):
+        ...
+
+
+class SwimmingBird(Bird):
+    """Mixin for birds that can swim."""
+
+    @abstractmethod
+    def swim(self):
+        ...
+
+
+class Eagle(FlyingBird):
+    def eat(self):       return "Eagle eats fish"
+    def breathe(self):   return "Eagle breathes air"
+    def fly(self):       return "Eagle soars at 3000 ft"
+
+
+class Duck(FlyingBird, SwimmingBird):
+    def eat(self):       return "Duck eats seeds"
+    def breathe(self):   return "Duck breathes air"
+    def fly(self):       return "Duck flies low"
+    def swim(self):      return "Duck paddles across pond"
+
+
+class Penguin(SwimmingBird):
+    def eat(self):       return "Penguin eats krill"
+    def breathe(self):   return "Penguin breathes air"
+    def swim(self):      return "Penguin dives at 25 mph"
+    # No fly() — Penguin is honest about its capabilities
+
+
+def let_it_fly(bird: FlyingBird):
+    print(bird.fly())
+
+def let_it_swim(bird: SwimmingBird):
+    print(bird.swim())
+
+
+eagle   = Eagle()
+duck    = Duck()
+penguin = Penguin()
+
+let_it_fly(eagle)       # Eagle soars at 3000 ft
+let_it_fly(duck)        # Duck flies low
+# let_it_fly(penguin)   # Type error at compile time — caught early, never crashes
+
+let_it_swim(duck)       # Duck paddles across pond
+let_it_swim(penguin)    # Penguin dives at 25 mph
+```
+
+## Output
+
+```
+Eagle soars at 3000 ft
+Duck flies low
+Duck paddles across pond
+Penguin dives at 25 mph
+```
+
+## Key Rule
+
+```
+Before making class B extend class A, ask:
+"Can B do EVERYTHING A promises, without surprise?"
+
+If NO  → do not inherit. Use composition or separate interfaces.
+If YES → inheritance is fine.
+
+The child must NEVER do less than the parent promised.
+```
+
+---
+---
+
+# I — Interface Segregation Principle (ISP)
+
+## What is it?
+
+> **Clients should not be forced to depend on interfaces they do not use.**
+
+Do not create one big fat interface that forces every class to implement things it does not need.
+
+Split big interfaces into small, focused ones.
+A class only implements what is relevant to it.
+
+## Bad Code
+
+```python
+# BAD — one fat interface forces Robot to implement eat() and sleep()
+
+from abc import ABC, abstractmethod
+
+class Worker(ABC):
+    @abstractmethod
+    def work(self):   ...
+
+    @abstractmethod
+    def eat(self):    ...      # robots don't eat
+
+    @abstractmethod
+    def sleep(self):  ...      # robots don't sleep
+
+    @abstractmethod
+    def charge(self): ...      # humans don't charge
+
+
+class HumanWorker(Worker):
+    def work(self):   print("Human is working")
+    def eat(self):    print("Human is eating")
+    def sleep(self):  print("Human is sleeping")
+    def charge(self): pass     # forced to implement — does nothing, misleading
+
+
+class RobotWorker(Worker):
+    def work(self):   print("Robot is working")
+    def eat(self):    raise NotImplementedError("Robots don't eat")   # lie
+    def sleep(self):  raise NotImplementedError("Robots don't sleep") # lie
+    def charge(self): print("Robot is charging")
+
+# Robot is FORCED to implement eat() and sleep() even though it never uses them.
+# This is ISP violation.
+```
+
+## Good Code
+
+```python
+# GOOD — small, focused interfaces. Each class picks only what it needs.
+
+from abc import ABC, abstractmethod
+
+
+class Workable(ABC):
+    @abstractmethod
+    def work(self): ...
+
+
+class Eatable(ABC):
+    @abstractmethod
+    def eat(self): ...
+
+
+class Sleepable(ABC):
+    @abstractmethod
+    def sleep(self): ...
+
+
+class Chargeable(ABC):
+    @abstractmethod
+    def charge(self): ...
+
+
+# Human needs: work + eat + sleep
+class HumanWorker(Workable, Eatable, Sleepable):
+    def work(self):
+        print("Human is working hard")
+
+    def eat(self):
+        print("Human is eating lunch")
+
+    def sleep(self):
+        print("Human is sleeping 8 hours")
+
+
+# Robot needs: work + charge
+class RobotWorker(Workable, Chargeable):
+    def work(self):
+        print("Robot is working 24/7")
+
+    def charge(self):
+        print("Robot is charging battery")
+
+
+# Android (future) needs: work + eat (simulated) + charge
+class AndroidWorker(Workable, Eatable, Chargeable):
+    def work(self):
+        print("Android is working")
+
+    def eat(self):
+        print("Android simulates eating for social interaction")
+
+    def charge(self):
+        print("Android is recharging")
+
+
+# Usage
+def start_shift(worker: Workable):
+    worker.work()
+
+def lunch_break(worker: Eatable):
+    worker.eat()
+
+def end_of_day(worker: Sleepable):
+    worker.sleep()
+
+def recharge_station(worker: Chargeable):
+    worker.charge()
+
+
+human   = HumanWorker()
+robot   = RobotWorker()
+android = AndroidWorker()
+
+start_shift(human)    # Human is working hard
+start_shift(robot)    # Robot is working 24/7
+start_shift(android)  # Android is working
+
+lunch_break(human)    # Human is eating lunch
+lunch_break(android)  # Android simulates eating
+# lunch_break(robot)  # Type error — Robot has no eat(). Caught early.
+
+recharge_station(robot)    # Robot is charging battery
+recharge_station(android)  # Android is recharging
+end_of_day(human)          # Human is sleeping 8 hours
+```
+
+## Output
+
+```
+Human is working hard
+Robot is working 24/7
+Android is working
+Human is eating lunch
+Android simulates eating for social interaction
+Robot is charging battery
+Android is recharging
+Human is sleeping 8 hours
+```
+
+## Key Rule
+
+```
+Ever write this?
+
+    def eat(self):
+        raise NotImplementedError("Robots don't eat")
+
+That is ISP being violated.
+
+The class is being FORCED to implement something it does not need.
+
+Fix: split the interface. Each class only signs up for what it actually does.
+```
+
+---
+---
+
+# D — Dependency Inversion Principle (DIP)
+
+## What is it?
+
+> 1. High-level modules should not depend on low-level modules. Both should depend on **abstractions**.
+> 2. Abstractions should not depend on details. Details should depend on abstractions.
+
+In plain English:
+**Your business logic should not care about HOW things are done.**
+It should only care about WHAT needs to be done — via an interface.
+
+This lets you swap databases, email providers, payment gateways —
+without touching a single line of your core business logic.
+
+## Bad Code
+
+```python
+# BAD — OrderService is hardwired to specific implementations
+
+class MySQLDatabase:
+    def save(self, order):
+        print(f"[MySQL] Saving order {order['id']} to MySQL database")
+
+class GmailEmailService:
+    def send(self, to, message):
+        print(f"[Gmail] Sending email to {to}: {message}")
+
+class OrderService:
+    def __init__(self):
+        # PROBLEM: hardcoded to MySQL and Gmail
+        # Want to switch to PostgreSQL? Edit OrderService.
+        # Want to switch to SendGrid? Edit OrderService.
+        # Want to test without real DB and email? You can't.
+        self.db    = MySQLDatabase()
+        self.email = GmailEmailService()
+
+    def place_order(self, order):
+        self.db.save(order)
+        self.email.send(order["customer_email"], f"Order {order['id']} confirmed!")
+        print(f"Order {order['id']} placed.")
+```
+
+## Good Code
+
+```python
+# GOOD — DIP applied. OrderService depends on abstractions, not concretions.
+
+from abc import ABC, abstractmethod
+
+
+# ── Abstractions (interfaces) ──────────────────────────────────────────────
+class Database(ABC):
+    """What a database must be able to do."""
+
+    @abstractmethod
+    def save(self, data: dict) -> None: ...
+
+    @abstractmethod
+    def find(self, record_id: int) -> dict: ...
+
+
+class EmailService(ABC):
+    """What an email service must be able to do."""
+
+    @abstractmethod
+    def send(self, to: str, subject: str, body: str) -> None: ...
+
+
+class PaymentGateway(ABC):
+    """What a payment gateway must be able to do."""
+
+    @abstractmethod
+    def charge(self, amount: float, card_token: str) -> bool: ...
+
+
+# ── Low-level implementations ──────────────────────────────────────────────
+class MySQLDatabase(Database):
+    def save(self, data):
+        print(f"[MySQL] Saved record: {data}")
+
+    def find(self, record_id):
+        print(f"[MySQL] Found record #{record_id}")
+        return {"id": record_id}
+
+
+class PostgreSQLDatabase(Database):
+    def save(self, data):
+        print(f"[PostgreSQL] Saved record: {data}")
+
+    def find(self, record_id):
+        print(f"[PostgreSQL] Found record #{record_id}")
+        return {"id": record_id}
+
+
+class InMemoryDatabase(Database):
+    """Used in unit tests — no real database needed."""
+
+    def __init__(self):
+        self._store = {}
+
+    def save(self, data):
+        self._store[data["id"]] = data
+        print(f"[InMemory] Saved: {data}")
+
+    def find(self, record_id):
+        return self._store.get(record_id, {})
+
+
+class GmailService(EmailService):
+    def send(self, to, subject, body):
+        print(f"[Gmail] To: {to} | Subject: {subject} | Body: {body}")
+
+
+class SendGridService(EmailService):
+    def send(self, to, subject, body):
+        print(f"[SendGrid] To: {to} | Subject: {subject} | Body: {body}")
+
+
+class FakeEmailService(EmailService):
+    """Used in unit tests — no real emails sent."""
+
+    def __init__(self):
+        self.sent = []
+
+    def send(self, to, subject, body):
+        self.sent.append({"to": to, "subject": subject, "body": body})
+        print(f"[FakeEmail] Recorded email to {to}")
+
+
+class StripeGateway(PaymentGateway):
+    def charge(self, amount, card_token):
+        print(f"[Stripe] Charged ${amount} on card {card_token}")
+        return True
+
+
+class FakePaymentGateway(PaymentGateway):
+    """Used in unit tests — no real charges."""
+
+    def charge(self, amount, card_token):
+        print(f"[FakePayment] Simulated charge of ${amount}")
+        return True
+
+
+# ── High-level business logic ──────────────────────────────────────────────
+class OrderService:
+    """
+    Core business logic.
+    Does NOT know about MySQL, Gmail, or Stripe.
+    Only knows about Database, EmailService, PaymentGateway interfaces.
+    """
+
+    def __init__(
+        self,
+        db:      Database,
+        emailer: EmailService,
+        payment: PaymentGateway,
+    ):
+        self._db      = db
+        self._emailer = emailer
+        self._payment = payment
+
+    def place_order(self, order: dict) -> bool:
+        # 1. Charge customer
+        charged = self._payment.charge(
+            amount=order["total"],
+            card_token=order["card_token"],
+        )
+        if not charged:
+            print("Payment failed. Order not placed.")
+            return False
+
+        # 2. Save order
+        self._db.save({"id": order["id"], "items": order["items"], "total": order["total"]})
+
+        # 3. Notify customer
+        self._emailer.send(
+            to=order["customer_email"],
+            subject=f"Order #{order['id']} Confirmed",
+            body=f"Thank you! Your order total is ${order['total']}.",
+        )
+
+        print(f"Order #{order['id']} placed successfully.")
+        return True
+
+
+# ── Production wiring ──────────────────────────────────────────────────────
+print("=== PRODUCTION ===")
+prod_service = OrderService(
+    db=MySQLDatabase(),
+    emailer=GmailService(),
+    payment=StripeGateway(),
+)
+prod_service.place_order({
+    "id": 1001,
+    "items": ["Python Book", "Keyboard"],
+    "total": 1298,
+    "card_token": "tok_visa_xxxx",
+    "customer_email": "alice@example.com",
+})
+
+# ── Swap to PostgreSQL + SendGrid — zero changes to OrderService ───────────
+print("\n=== PRODUCTION (Different Stack) ===")
+alt_service = OrderService(
+    db=PostgreSQLDatabase(),
+    emailer=SendGridService(),
+    payment=StripeGateway(),
+)
+alt_service.place_order({
+    "id": 1002,
+    "items": ["Mouse"],
+    "total": 499,
+    "card_token": "tok_visa_yyyy",
+    "customer_email": "bob@example.com",
+})
+
+# ── Testing — no real DB, email, or payment needed ─────────────────────────
+print("\n=== UNIT TEST (Fake dependencies) ===")
+fake_email   = FakeEmailService()
+test_service = OrderService(
+    db=InMemoryDatabase(),
+    emailer=fake_email,
+    payment=FakePaymentGateway(),
+)
+test_service.place_order({
+    "id": 9999,
+    "items": ["Test Item"],
+    "total": 100,
+    "card_token": "tok_test",
+    "customer_email": "test@example.com",
+})
+print("Emails captured in test:", fake_email.sent)
+```
+
+## Output
+
+```
+=== PRODUCTION ===
+[Stripe]     Charged $1298 on card tok_visa_xxxx
+[MySQL]      Saved record: {'id': 1001, 'items': ['Python Book', 'Keyboard'], 'total': 1298}
+[Gmail]      To: alice@example.com | Subject: Order #1001 Confirmed | Body: Thank you! ...
+Order #1001 placed successfully.
+
+=== PRODUCTION (Different Stack) ===
+[Stripe]     Charged $499 on card tok_visa_yyyy
+[PostgreSQL] Saved record: {'id': 1002, 'items': ['Mouse'], 'total': 499}
+[SendGrid]   To: bob@example.com | Subject: Order #1002 Confirmed | Body: Thank you! ...
+Order #1002 placed successfully.
+
+=== UNIT TEST (Fake dependencies) ===
+[FakePayment] Simulated charge of $100
+[InMemory]    Saved: {'id': 9999, 'items': ['Test Item'], 'total': 100}
+[FakeEmail]   Recorded email to test@example.com
+Order #9999 placed successfully.
+Emails captured in test: [{'to': 'test@example.com', 'subject': 'Order #9999 Confirmed', ...}]
+```
+
+## Key Rule
+
+```
+High-level code (business logic) should never say:
+    self.db    = MySQLDatabase()      ← hardcoded
+    self.email = GmailService()       ← hardcoded
+
+It should always say:
+    def __init__(self, db: Database, email: EmailService):
+        self.db    = db               ← injected
+        self.email = email            ← injected
+
+This is called Dependency Injection.
+DI is HOW you implement DIP.
+```
+
+---
+---
+
+## All 5 Principles — Quick Reference
+
+```
+┌─────┬──────────────────────────────────────────────────────────────────┐
+│     │                                                                  │
+│  S  │  SRP — One class, one job, one reason to change.                │
+│     │                                                                  │
+│  O  │  OCP — Add new behavior via new classes. Never edit old code.   │
+│     │                                                                  │
+│  L  │  LSP — Subclass must fully honor the parent's contract.         │
+│     │                                                                  │
+│  I  │  ISP — Small focused interfaces. No class forced to implement   │
+│     │        things it does not use.                                   │
+│     │                                                                  │
+│  D  │  DIP — Depend on interfaces, not concrete classes.              │
+│     │        Inject dependencies from outside.                         │
+│     │                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Checklist Before You Post
+## The One-Sentence Test for Each Principle
 
-- [ ] Read the full code above and understand it
-- [ ] Copy the BAD code block → paste to ray.so → screenshot
-- [ ] Copy the GOOD code block → paste to ray.so → screenshot
-- [ ] Schedule Tweet 1 (hook) for 8 AM or 7 PM your timezone
-- [ ] Add all 5 tweets as a thread (reply to yourself)
-- [ ] Reply to every comment within first 30 minutes
-- [ ] Pin the full 30-day PDF to your profile bio
+```
+SRP → "What does this class do?"
+      If the answer has AND in it — split it.
 
+OCP → "Do I need to edit old working code to add this feature?"
+      If YES — design it with an interface instead.
+
+LSP → "If I replace the parent with this child, will anything break?"
+      If YES — rethink your inheritance.
+
+ISP → "Is this class forced to implement a method it does not use?"
+      If YES — split the interface.
+
+DIP → "Does my business logic name a specific database or email service?"
+      If YES — introduce an interface and inject it.
+```
 ---
 
 *Day 1 of 30 — @startfin LLD Twitter Series*
